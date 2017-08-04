@@ -1,0 +1,42 @@
+Wire Cell Validation Suite
+
+* What's here
+
+This is mostly a [[https://waf.io/][Waf]] [[./wscript][wscript]] file that runs =wire-cell= and other
+programs on some test data looking for problems.  
+
+* Usage
+
+Here's how to exercise the validation suite.
+
+** Environment
+
+Set up your environment so that:
+
+- Set =WIRECELL_PATH= to point to WCT JSON/Jsonnet files as usual.
+
+- Build WCT and keep the =build/= directory around.
+
+- Assure that you can run =wire-cell --help=.
+
+- Optionally, set up a LArSoft user environment and make sure "art --print-description WCLS" can run.
+
+This is intentionally kept vague as there are many ways to do this.
+
+** Running the validation
+
+#+BEGIN_EXAMPLE
+  $ ./waf configure  --wct-build=/path/to/wct/build --wct-data=/path/to/data/validation
+  $ ./waf
+#+END_EXAMPLE
+
+** Failing to run the validation
+
+If a test fails, re-running =./waf= may cause subsequent tests to be
+tried but in general a failure stops the suite.
+
+* Getting the input data
+
+The validation suite uses a few GB of data which must be made available via =--wct-data=.
+
+T.B.D.
