@@ -1,0 +1,6 @@
+build
+*~
+*.root
+*.log
+*.lock-waf*
+.waf*
