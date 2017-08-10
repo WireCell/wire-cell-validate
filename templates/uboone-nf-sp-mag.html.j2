@@ -1,0 +1,29 @@
+<html>
+  <head>
+    <title>Summary histograms for {{ subrun }}</title>
+  </head>
+  <body>
+    <h1>Summary histograms for {{ subrun }}</h1>
+
+    <h2>Notes</h2>
+
+    <ul>
+      <li>The plots are rebinned as shown in their title.</li>
+      <li>The rebinning performs an average and so changes the max/min values.</li>
+      <li>Click image for higher resolution version.</li>
+      <li>The "orig" plots are raw ADC (no noise filtering) and have
+      their baselines subtracted.  Baselines are taken as the most
+      common ADC value on a per channel basis.  The baseline
+	vs. channel are shown on these plots.</li>
+      <li>The "raw" plots are after noise filtering.
+      <li>The "wiener" and "gauss" are after signal processing, with
+      their name indicating the form of filter used.
+    </ul>
+
+    {% for stage in "orig raw wiener gauss".split() %}
+    <h2>Plots for data stage "{{ stage }} "</h2>
+    <a href="{{ pngs[stage].plot }}"><img src="{{ pngs[stage].thumb }}"></a> 
+    {% endfor %}
+    
+  </body>
+</html>

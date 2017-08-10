@@ -1,0 +1,16 @@
+<html>
+  <head>
+    <title>Summary histograms for WCT NF + SP</title>
+  </head>
+  <body>
+    <h1>Summary pages for WCT NF + SP</h1>
+
+    First event of subrun:
+    <ul>
+    {% for subrun in subruns %}
+    <li><a href="larsoft-{{ subrun }}_nfsp_plots.html">{{ subrun }}</a></li>
+    {% endfor %}
+    </ul>  
+    
+  </body>
+</html>

@@ -4,3 +4,4 @@ build
 *.log
 *.lock-waf*
 .waf*
+*.png

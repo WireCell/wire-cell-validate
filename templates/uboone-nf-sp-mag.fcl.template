@@ -1,0 +1,40 @@
+source :{
+   module_type: RootInput
+   //inputCommands: ["keep raw::RawDigits_*_*_*", "drop *"]
+   inputCommands: ["drop *", "keep raw::RawDigits_*_*_*"]
+   // raw::RawDigits_wcNoiseFilter__DataRecoStage1
+   //inputCommands: ["keep *", "drop raw::ubdaqSoftwareTriggerData_*_*_*"]
+   //inputCommands: ["drop raw::ubdaqSoftwareTriggerData_*_*_*"]
+   maxEvents: 1
+}
+physics :{
+   producers: {
+      nfsp : {
+         module_type : WireCellToolkit
+         wcls_main: {
+            # Configure Wire Cell / Larsoft integration layer
+            tool_type: WCLS
+            # The "apps" are the main executing components on the WCT side
+            apps: ["Omnibus"]
+            # Plugins are libraries of WCT components
+            plugins: ["WireCellGen", "WireCellSigProc", "WireCellSio", "WireCellLarsoft"]
+            # The top-level WCT configuration sequence
+            configs: ["uboone-nf-sp-mag.jsonnet"]
+            # Two-faced input components.  Needs to also be mentioned in WCT config.
+            inputers: ["wclsRawFrameSource"]
+            # Two-faced output components.  Needs to also be mentioned in WCT config.
+            outputers: ["wclsCookedFrameSink"]
+            # external parameters injected into the WCT configuration
+            params: {
+               detector: "uboone"
+               input: "/dev/null"
+               output: "@MAGNIFY_OUTPUT@"
+            }
+        }
+      }
+   }
+
+   p1        : [ nfsp ]
+   trigger_paths : [ p1 ]
+
+}

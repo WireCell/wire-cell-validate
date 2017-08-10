@@ -1,0 +1,220 @@
+# This area runs noise filtering and signal processing validation jobs.
+#
+# artraw->[nfsp]->artnfsp->[mag]>magnfsp
+# artraw->[mag]->magorig->[nfsp]>magnfsp
+
+def configure(cfg):
+    pass
+
+
+def make_fcl(**subs):
+    cmds = list()
+    for k,v in subs.items():
+        cmds.append("-e 's|@%s@|%s|g'" % (k.upper(),v))
+    cmds = " ".join(cmds)
+    cmds = "sed %s < ${SRC[0].abspath()} > ${TGT[0].abspath()}" % cmds
+    return cmds
+
+def art_rule(nskip=0, nevts=1, artout=0, logout=1):
+    cmd = "${ART} --nevts %d --nskip %d" % (nevts, nskip)
+    cmd += " --config ${SRC[0].abspath()}"
+    cmd += " --source ${SRC[1].abspath()}"
+    if artout is not None:
+        cmd += " --output ${TGT[%d].abspath()}" % artout
+    if logout is not None:
+        cmd = "(%s > ${TGT[%d].abspath()} 2>&1)" % (cmd, logout)
+    return cmd
+
+def magnify_plot(name, crebin=4, trebin=5):
+    '''Not all rebin numbers work!  They must be (multiples of) factors
+    of the number of bins in a given dimension:
+
+    9594: 2 3 3 13 41           wrongly assumed microboone data
+    9595: 5 19 101              microboone data
+    3456: 2 2 2 2 2 2 2 3 3 3   microboone W channels
+    2400: 2 2 2 2 2 3 5 5       microboone U/V channels
+    '''
+    cmd = "${WIRECELL_VALIDATE} magnify-plot -n %s" % (name,)
+    cmd+= " --crebin %d --trebin %d" %(crebin, trebin)
+    if name == "orig":
+        cmd += " --baseline --saturate 50"
+    if name == "raw":
+        cmd += " --saturate 50"
+    if name in "gauss wiener".split():
+        cmd += " --threshold 10"        
+    cmd+= " --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
+    return cmd
+
+def magnify_jsonify():
+    return "${WIRECELL_VALIDATE} magnify-jsonify --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
+
+subruns = ['0005125-00017', '0005331-00018', '0005521-00020', '0005189-00016', '0005397-00028', '0005937-00029']
+
+def jsonify(**dat):
+    def run(tsk):
+        import json
+        jtext = json.dumps(dat, indent=4)
+        tsk.outputs[0].write(jtext)
+    return run
+
+def htmlify():
+    return "${YASHA} -V ${SRC[1].abspath()} -o ${TGT[0].abspath()} ${SRC[0].abspath()}"
+
+def build(bld):
+
+    input_datadir = bld.root.find_node(bld.env.DATADIR)
+
+    fcltmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.fcl.template")
+    htmltmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.html.j2")
+    indextmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-index.html.j2")
+
+    htmls = list()
+
+    for subrun in subruns:      # fixme: this really needs event number spec too
+        def fname(what, ext="root"):
+            return "larsoft-%s_%s.%s" % (subrun, what, ext)
+
+        src = input_datadir.find_node(fname("art"))
+        fcl = bld.path.find_or_declare(fname("nfsp_cfg","fcl"))
+        magroot = bld.path.find_or_declare(fname("nfsp_mag","root"))
+        magjson = bld.path.find_or_declare(fname("nfsp_mag","json"))
+        artroot = bld.path.find_or_declare(fname("nfsp_art","root"))
+        artlog = bld.path.find_or_declare(fname("nfsp_art","log"))
+
+        # make a custom fcl file for this run
+        bld(rule=make_fcl(magnify_output=magroot.abspath()), source=[fcltmpl], target=[fcl])
+
+        # run art
+        bld(rule=art_rule(), source = [fcl, src], target=[artroot, artlog, magroot])
+
+        bld(rule=magnify_jsonify(), source=[magroot], target=[magjson])
+
+        # make plots
+        pngs = dict()
+        all_pngs = list()
+        for name in ["orig","raw","gauss","wiener"]:
+            ### full is just too much
+            #fullpng=bld.path.find_or_declare(fname("nfsp_"+name+"_full", "png"))
+            #bld(rule=magnify_plot(name,1,1), source=[magroot], target=[fullpng])
+            plotpng=bld.path.find_or_declare(fname("nfsp_"+name, "png"))
+            bld(rule=magnify_plot(name,4,5), source=[magroot], target=[plotpng])
+            thumbpng=bld.path.find_or_declare(fname("nfsp_"+name+"_thumb", "png"))
+            bld(rule=magnify_plot(name,16,19), source=[magroot], target=[thumbpng])
+
+            bld.install_files('${PREFIX}/html', [plotpng, thumbpng], relative_trick=True)
+
+            pngs[name] = dict(plot=plotpng.name, thumb=thumbpng.name)
+            all_pngs += [plotpng, thumbpng]
+
+        json=bld.path.find_or_declare(fname("nfsp_plots", "json"))
+        bld(rule=jsonify(subrun=subrun, pngs=pngs), source=all_pngs, target=json)
+        
+        html=bld.path.find_or_declare(fname("nfsp_plots", "html"))
+        bld(rule=htmlify(), source=[htmltmpl,json], target=[html])
+        bld.install_files('${PREFIX}/html', [html], relative_trick=True)
+
+        htmls.append(html)
+        continue
+
+    indexjson = bld.path.find_or_declare("index.json")
+    bld(rule=jsonify(subruns=subruns, htmls=[h.name for h in htmls]),
+        source=htmls, target=indexjson)
+
+    indexhtml = bld.path.find_or_declare("index.html")
+    bld(rule=htmlify(), source=[indextmpl, indexjson], target=[indexhtml])
+    bld.install_files('${PREFIX}/html', [indexhtml], relative_trick=True)
+
+def moregarbage(bld):
+
+        #bld.add_group('group1')
+    #bld.set_group('group1')
+
+    datadir = bld.root.find_node(bld.env.DATADIR)
+    print "data dir at " , datadir.abspath()
+    
+    art_cmd_pattern = "${ART} -n 1 -c %s -o ${TGT[0].abspath()} -s ${SRC[0].abspath()} > ${TGT[1].abspath()} 2>&1"
+    for event in ["0005937-00027-01378"]:
+        larsoft_filename = "larsoft-%s.root" % event
+        rawnode = datadir.find_node(larsoft_filename)
+        if not rawnode:
+            raise ValueError("no node: %s" % larsoft_filename)
+        basename = larsoft_filename.replace(".root","")
+        def oname(level, ext="root"):
+            return "%s-%s.%s" % ( basename, level, ext)
+        bld(rule=art_cmd_pattern % "uboone-nf-sp-mag.fcl",
+            source = rawnode, target = [oname("nf-sp","root"), oname("nf-sp","log"), "magnify-nf-sp.root"])
+        magnify_filename = "magnify-%s-nf-sp.root" % event
+        bld(rule="cp ${SRC[0].abspath()} ${TGT[0].abspath()}",
+            source="magnify-nf-sp.root", target=magnify_filename)
+
+        magnify_files_from_art.append(bld.path.find_or_declare(magnify_filename))
+
+
+    #
+    # Tests that use WCT unit test programs.
+    #
+
+    te_pattern = "${TEST_EXAM_%s} ${SRC[0].abspath()} ${TGT[0].abspath()} > ${TGT[1].abspath()} 2>&1"
+    mdcmd = "${WIRECELL_VALIDATE} magnify-diff -o ${TGT[0].abspath()} ${SRC[0].abspath()} ${SRC[1].abspath()}"
+    mdcmd += " > ${TGT[1].abspath()} 2>&1"
+    mpcmd = "${WIRECELL_VALIDATE} magnify-plot --crebin 4 --trebin 13 -n %s -o ${TGT[0].abspath()} ${SRC[0].abspath()}"
+
+    magnify_files_from_xin = [datadir.find_node(f) for f in ["nsp_2D_display_3455_0_6.root",
+                                                             "nsp_2D_display_3493_821_41075.root"]]
+    
+    all_magnify_files = magnify_files_from_art + magnify_files_from_xin
+    
+    for refnode in all_magnify_files:
+        basename = os.path.basename(refnode.abspath()).replace(".root","")
+
+        for short_name, long_name, hist_name in [("tenf", "noise_filters", "raw"),
+                                                 ("tesp", "signal_proc", "decon")]:
+            boname = basename + "-" + short_name
+
+            def rname(n): return "%s%d.root" % (boname, n)
+            def lname(n): return "%s%d.log"  % (boname, n)
+
+            tecmd = te_pattern % long_name.upper()
+
+            bld(rule=tecmd, source=refnode, target=[rname(1), lname(1)])
+            bld(rule=tecmd, source=rname(1), target=[rname(2), lname(2)])
+            bld(rule=tecmd, source=rname(2), target=[rname(3), lname(3)])
+
+            def rdname(l): return "%s-diff%s.root" % (boname, l)
+            def rlname(l): return "%s-diff%s.log"  % (boname, l)
+            def rokname(l): return "%s-diff%s.ok"  % (boname, l)
+
+            #bld(rule=mdcmd, source=[refnode, rname(1)],      target=[rdname("r1"), rlname("r1")])
+            #bld(rule=mdcmd, source=[rname(1), rname(2)], target=[rdname("12"), rlname("12")])
+            bld(rule=mdcmd, source=[rname(2), rname(3)], target=[rdname("23"), rlname("23")])
+                
+            def pdname(l): return "%s-diff%s.png" % (boname, l)
+            bld(rule=mpcmd%hist_name, source=rdname("23"), target=pdname("23"))
+
+            testcmd = 'test -z "$(grep _%s ${SRC[0].abspath()})" && touch ${TGT[0].abspath()}' % hist_name
+            #bld(rule=testcmd, source=rlname("r1"), target=rokname("r1"))
+            #bld(rule=testcmd, source=rlname("12"), target=rokname("12"))
+            bld(rule=testcmd, source=rlname("23"), target=rokname("23"))
+            
+
+
+
+def garbage():
+
+    top = vld.path.parent
+    sm = top.children                     # submodules
+    wire_cell = sm["apps"].find_or_declare("wire-cell"),
+    # fixme: move any and all configs used for validation into this package
+    bld.env.CFGDIR = sm["cfg"].abspath()
+
+    bld(rule="${SRC[0].abspath()} --help > ${TGT[0].abspath()} 2>&1",
+            source=wire_cell,
+            target="help_output.txt")
+    bld(rule="test $(wc -l < ${SRC} ) = 9 && touch ${TGT[0].abspath()}",
+            source="help_output.txt",
+            target="help_output.txt.ok")
+
+
+    bld(rule="${JSONNET} -J ${CFGDIR} -o ${TGT[0].abspath()} ${SRC[0].abspath()}",
+            source = sm["cfg"].find_resource("uboone/fourdee.jsonnet"),
+            target = "uboone-fourdee.json")
