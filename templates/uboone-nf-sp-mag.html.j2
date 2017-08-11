@@ -1,9 +1,9 @@
 <html>
   <head>
-    <title>Summary histograms for {{ subrun }}</title>
+    <title>Summary histograms for {{ run }}-{{ subrun }}</title>
   </head>
   <body>
-    <h1>Summary histograms for {{ subrun }}</h1>
+    <h1>Summary histograms for subrun {{ run }}-{{ subrun }}</h1>
 
     <h2>Notes</h2>
 
@@ -20,9 +20,20 @@
       their name indicating the form of filter used.
     </ul>
 
-    {% for stage in "orig raw wiener gauss".split() %}
-    <h2>Plots for data stage "{{ stage }} "</h2>
-    <a href="{{ pngs[stage].plot }}"><img src="{{ pngs[stage].thumb }}"></a> 
+    <h2>Plots</h2>
+
+    {% for tier in "orig raw wiener gauss".split() %}
+    <h3>Data tier "{{ tier }}"</h3>
+    
+    <h4>Tick vs channel</h4>
+    <center>
+      <a href="{{ pngs[tier]["display"] }}"><img src="{{ pngs[tier]["thumb"] }}"></a>
+    </center>
+
+    <h4>Channel Summaries</h3>
+    <center>
+      <img src="{{ pngs[tier]["reduc"] }}">
+    </center>
     {% endfor %}
     
   </body>

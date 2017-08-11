@@ -59,6 +59,10 @@ def configure(cfg):
         if oldldpath:
             cfg.env.env['LD_LIBRARY_PATH'] += ":" + oldldpath
 
+
+    # find main WCT CLI
+    cfg.find_program("wire-cell", var="WIRE_CELL", mandatory=True)
+
     # Make sure the wirecell-* python CLIs are available
     for pkg in "util sigproc gen validate".split():
         cli = "wirecell-" + pkg

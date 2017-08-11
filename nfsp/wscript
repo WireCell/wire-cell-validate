@@ -3,6 +3,8 @@
 # artraw->[nfsp]->artnfsp->[mag]>magnfsp
 # artraw->[mag]->magorig->[nfsp]>magnfsp
 
+import os
+
 def configure(cfg):
     pass
 
@@ -22,8 +24,36 @@ def art_rule(nskip=0, nevts=1, artout=0, logout=1):
     if artout is not None:
         cmd += " --output ${TGT[%d].abspath()}" % artout
     if logout is not None:
-        cmd = "(%s > ${TGT[%d].abspath()} 2>&1)" % (cmd, logout)
+        cmd = "%s > ${TGT[%d].abspath()} 2>&1" % (cmd, logout)
     return cmd
+
+def wct_path_find(filename):
+    if filename.startswith("/"):
+        return filename
+    for path in os.environ["WIRECELL_PATH"].split(":"):
+        fpath = os.path.join(path, filename)
+        if os.path.exists(fpath):
+            return fpath
+    raise ValueError("no such file: %s" % filename)
+
+def wct_cli(detector="uboone", **params):
+    cmd = "${WIRE_CELL} --config ${SRC[0].abspath()}"
+    params["detector"] = detector
+    for kv in params.items():
+        cmd += " -V %s=%s" % kv
+    if "output" not in params:
+        cmd += " -V output=${TGT[0].abspath()}"
+    if "input" not in params:
+        cmd += " -V input=${SRC[1].abspath()}"
+    cmd += " > ${TGT[1].abspath()} 2>&1"
+    return cmd
+
+def magnify_diff(epsilon=0.0):
+    cmd = "${WIRECELL_VALIDATE} magnify-diff --epsilon %e" % epsilon
+    cmd+= " -o ${TGT[0].abspath()} ${SRC[0].abspath()} ${SRC[1].abspath()}"
+    cmd+= " > ${TGT[1].abspath()} 2>&1"
+    return cmd
+    
 
 def magnify_plot(name, crebin=4, trebin=5):
     '''Not all rebin numbers work!  They must be (multiples of) factors
@@ -45,6 +75,11 @@ def magnify_plot(name, crebin=4, trebin=5):
     cmd+= " --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
     return cmd
 
+def magnify_plot_reduce(tier):
+    cmd = "${WIRECELL_VALIDATE} magnify-plot-reduce -n %s" % (tier,)
+    cmd+= " --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
+    return cmd
+
 def magnify_jsonify():
     return "${WIRECELL_VALIDATE} magnify-jsonify --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
 
@@ -53,6 +88,10 @@ subruns = ['0005125-00017', '0005331-00018', '0005521-00020', '0005189-00016', '
 def jsonify(**dat):
     def run(tsk):
         import json
+        contents = dict()
+        for inp in tsk.inputs:
+            contents[inp.name] = inp.read()
+        dat["source_contents"] = contents
         jtext = json.dumps(dat, indent=4)
         tsk.outputs[0].write(jtext)
     return run
@@ -60,161 +99,155 @@ def jsonify(**dat):
 def htmlify():
     return "${YASHA} -V ${SRC[1].abspath()} -o ${TGT[0].abspath()} ${SRC[0].abspath()}"
 
-def build(bld):
+def build_mag(bld, mag, install_path='${PREFIX}/html', **bag):
+    '''Define build instructions for processing each magnify root file
+    node.  Return dictionary of result files to expect.
+    '''
+    basename = mag.name.replace(".mag.root","")
+    jsonnode = bld.path.find_or_declare(mag.name.replace(".root",".json"))
+    mag_html_tmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.html.j2")
+    mag_html = bld.path.find_or_declare(mag.name.replace(".root",".html"))
 
-    input_datadir = bld.root.find_node(bld.env.DATADIR)
+    dat = dict(bag)
 
-    fcltmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.fcl.template")
-    htmltmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.html.j2")
-    indextmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-index.html.j2")
-
-    htmls = list()
-
-    for subrun in subruns:      # fixme: this really needs event number spec too
-        def fname(what, ext="root"):
-            return "larsoft-%s_%s.%s" % (subrun, what, ext)
-
-        src = input_datadir.find_node(fname("art"))
-        fcl = bld.path.find_or_declare(fname("nfsp_cfg","fcl"))
-        magroot = bld.path.find_or_declare(fname("nfsp_mag","root"))
-        magjson = bld.path.find_or_declare(fname("nfsp_mag","json"))
-        artroot = bld.path.find_or_declare(fname("nfsp_art","root"))
-        artlog = bld.path.find_or_declare(fname("nfsp_art","log"))
-
-        # make a custom fcl file for this run
-        bld(rule=make_fcl(magnify_output=magroot.abspath()), source=[fcltmpl], target=[fcl])
-
-        # run art
-        bld(rule=art_rule(), source = [fcl, src], target=[artroot, artlog, magroot])
-
-        bld(rule=magnify_jsonify(), source=[magroot], target=[magjson])
-
-        # make plots
+    png_dat = dict()
+    png_nodes = list()
+    for tier in ["orig","raw","gauss","wiener"]:
+        tiername = basename + "-" + tier
+        rules = dict(
+            display = magnify_plot(tier, 4, 5),
+            thumb = magnify_plot(tier,16,19),
+            reduc = magnify_plot_reduce(tier),
+            )
         pngs = dict()
-        all_pngs = list()
-        for name in ["orig","raw","gauss","wiener"]:
-            ### full is just too much
-            #fullpng=bld.path.find_or_declare(fname("nfsp_"+name+"_full", "png"))
-            #bld(rule=magnify_plot(name,1,1), source=[magroot], target=[fullpng])
-            plotpng=bld.path.find_or_declare(fname("nfsp_"+name, "png"))
-            bld(rule=magnify_plot(name,4,5), source=[magroot], target=[plotpng])
-            thumbpng=bld.path.find_or_declare(fname("nfsp_"+name+"_thumb", "png"))
-            bld(rule=magnify_plot(name,16,19), source=[magroot], target=[thumbpng])
+        for name, rule in rules.items():
+            node = bld.path.find_or_declare(tiername+"." + name + ".png")
+            bld(rule=rule, source=[mag], target=[node])
+            pngs[name] = node.name
+            png_nodes.append(node)
 
-            bld.install_files('${PREFIX}/html', [plotpng, thumbpng], relative_trick=True)
+        png_dat[tier] = pngs
 
-            pngs[name] = dict(plot=plotpng.name, thumb=thumbpng.name)
-            all_pngs += [plotpng, thumbpng]
 
-        json=bld.path.find_or_declare(fname("nfsp_plots", "json"))
-        bld(rule=jsonify(subrun=subrun, pngs=pngs), source=all_pngs, target=json)
-        
-        html=bld.path.find_or_declare(fname("nfsp_plots", "html"))
-        bld(rule=htmlify(), source=[htmltmpl,json], target=[html])
-        bld.install_files('${PREFIX}/html', [html], relative_trick=True)
+    dat["basename"] = basename
+    dat["pngs"] = png_dat
+    dat["summary_json"] = jsonnode.name
+    dat["summary_html"] = mag_html.name
 
-        htmls.append(html)
-        continue
-
-    indexjson = bld.path.find_or_declare("index.json")
-    bld(rule=jsonify(subruns=subruns, htmls=[h.name for h in htmls]),
-        source=htmls, target=indexjson)
-
-    indexhtml = bld.path.find_or_declare("index.html")
-    bld(rule=htmlify(), source=[indextmpl, indexjson], target=[indexhtml])
-    bld.install_files('${PREFIX}/html', [indexhtml], relative_trick=True)
-
-def moregarbage(bld):
-
-        #bld.add_group('group1')
-    #bld.set_group('group1')
-
-    datadir = bld.root.find_node(bld.env.DATADIR)
-    print "data dir at " , datadir.abspath()
+    bld(rule=jsonify(**dat), target=jsonnode)
+    bld(rule=htmlify(), source=[mag_html_tmpl, jsonnode], target=[mag_html])
+    bld.install_files(install_path, png_nodes)
+    bld.install_files(install_path, [mag_html])
     
-    art_cmd_pattern = "${ART} -n 1 -c %s -o ${TGT[0].abspath()} -s ${SRC[0].abspath()} > ${TGT[1].abspath()} 2>&1"
-    for event in ["0005937-00027-01378"]:
-        larsoft_filename = "larsoft-%s.root" % event
-        rawnode = datadir.find_node(larsoft_filename)
-        if not rawnode:
-            raise ValueError("no node: %s" % larsoft_filename)
-        basename = larsoft_filename.replace(".root","")
-        def oname(level, ext="root"):
-            return "%s-%s.%s" % ( basename, level, ext)
-        bld(rule=art_cmd_pattern % "uboone-nf-sp-mag.fcl",
-            source = rawnode, target = [oname("nf-sp","root"), oname("nf-sp","log"), "magnify-nf-sp.root"])
-        magnify_filename = "magnify-%s-nf-sp.root" % event
-        bld(rule="cp ${SRC[0].abspath()} ${TGT[0].abspath()}",
-            source="magnify-nf-sp.root", target=magnify_filename)
+    return dat
 
-        magnify_files_from_art.append(bld.path.find_or_declare(magnify_filename))
+def build(bld):
+    '''
+    Run validation suite for NF+SP.
+    '''
+
+    detector = "uboone"         # just MB for now, but keep this as a parameter
+
+    # filename is generally:
+    # <detector>_<ID>_<chain>.<schema>.<format>
+    # detector is just "uboone" for now
+    # ID identifies the event as <run>-<subrun>-many or <run>-<subrun>-<event> if single event file
+    # chain is major processing steps, eg "nf-sp" for noise filter + sigproc or "daq" for raw data
+    # schema is what the file follows, eg "art" or "mag"
+    # format is file format, eg "root"
+    filename_pattern = "{detector}_{run}-{subrun}-{event}_{chain}.{schema}.{format}"
+    def fname(d, **parms):
+        return filename_pattern.format(**dict(d, **parms))
+
+    daqdir = bld.root.find_node(bld.env.DATADIR)
+
+    # fixme: regularize names of driving files
+    fcltmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-mag.fcl.j2")
+    indextmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-index.html.j2")
+    eventtmpl = bld.path.parent.find_resource("templates/uboone-nf-sp-event.html.j2")
+    wctcfg = bld.root.make_node(wct_path_find("uboone/main/mag-nf-sp-mag.jsonnet"))
 
 
-    #
-    # Tests that use WCT unit test programs.
-    #
+    diff_logs = list()
 
-    te_pattern = "${TEST_EXAM_%s} ${SRC[0].abspath()} ${TGT[0].abspath()} > ${TGT[1].abspath()} 2>&1"
-    mdcmd = "${WIRECELL_VALIDATE} magnify-diff -o ${TGT[0].abspath()} ${SRC[0].abspath()} ${SRC[1].abspath()}"
-    mdcmd += " > ${TGT[1].abspath()} 2>&1"
-    mpcmd = "${WIRECELL_VALIDATE} magnify-plot --crebin 4 --trebin 13 -n %s -o ${TGT[0].abspath()} ${SRC[0].abspath()}"
+    all_dat = dict()
+    all_dat["errdat"] = dict()
+    for runsub in subruns:
 
-    magnify_files_from_xin = [datadir.find_node(f) for f in ["nsp_2D_display_3455_0_6.root",
-                                                             "nsp_2D_display_3493_821_41075.root"]]
+        run,subrun = runsub.split("-")
+        bag = dict(detector=detector, run=run, subrun=subrun,
+                   chain="nf-sp", schema="mag", format="root")
+
+        wcls_in = fname(bag, event="many", chain="daq", schema="art", format="root")
+        print wcls_in
+        wcls_in  = daqdir.find_node(wcls_in)
+        assert(wcls_in)
+
+        runsubdat = dict()
+        for event in [1,2]:
+
+            bag["event"] = event
+
+
+            wcls_cfg = bld.path.find_or_declare(fname(bag, schema="cfg", format="fcl"))
+            wcls_bag = dict(bag, chain="nf-sp-wcls", desc='WCT in LS')
+            wcls_out = bld.path.find_or_declare(fname(wcls_bag, schema="art"))
+            wcls_mag = bld.path.find_or_declare(fname(wcls_bag, schema="mag"))
+            wcls_log = bld.path.find_or_declare(fname(wcls_bag, schema="wcls", format="log"))
+
+            wct_in = wcls_mag
+            wct_cfg = wctcfg
+            wct_bag = dict(bag, chain="nf-sp-wct", desc='WCT from CLI')
+            wct_mag = bld.path.find_or_declare(fname(wct_bag, schema="mag"))
+            wct_log = bld.path.find_or_declare(fname(wct_bag, schema="wct", format="log"))
+
+            diff_in1 = wcls_mag
+            diff_in2 = wct_mag
+            diff_bag = dict(bag, chain="nf-sp-wwdiff", desc='WCLS-WCT difference')
+            diff_mag = bld.path.find_or_declare(fname(bag, schema="mag"))
+            diff_log = bld.path.find_or_declare(fname(bag, schema="magdiff",format="log"))
+
+            evt_json = bld.path.find_or_declare(fname(bag, schema="event", format="json"))
+            evt_html = bld.path.find_or_declare(fname(bag, schema="event", format="html"))
+
+            diff_logs.append(diff_log)
+            all_dat["errdat"][diff_log.name] = dict(link=evt_html.name, desc="WCLS-WCT difference")
+
+            # run wcls via art
+            bld(rule=make_fcl(magnify_output=wcls_mag.abspath()), source=[fcltmpl], target=[wcls_cfg])
+            bld(rule=art_rule(event-1), source=[wcls_cfg,wcls_in], target=[wcls_out, wcls_log, wcls_mag])
+
+            # run wct cli
+            bld(rule=wct_cli(), source=[wct_cfg, wct_in], target=[wct_mag, wct_log])
+
+            # diff the two
+            bld(rule=magnify_diff(), source=[diff_in1, diff_in2], target=[diff_mag, diff_log])
+
+            mags = [(wcls_mag, wcls_bag),
+                    (wct_mag,  wct_bag),
+                    (diff_mag, diff_bag)]
+
+            magdat=dict()
+            for m,b in mags:
+                magdat[m.name] = build_mag(bld, m, **b)
+
+            evtdat = dict( bag, 
+                           event_html = evt_html.name,
+                           mag = magdat,
+                           wcls_log = wcls_log.name,
+                           wct_log = wct_log.name,
+                           diff_log = diff_log.name)
+            runsubdat[event] = evtdat
+
+            bld(rule=jsonify(**evtdat), source=[diff_log], target=[evt_json])
+            bld(rule=htmlify(), source=[eventtmpl, evt_json], target=[evt_html])
+            bld.install_files('${PREFIX}/html', [evt_html])
+
+
+        all_dat[runsub] = runsubdat
     
-    all_magnify_files = magnify_files_from_art + magnify_files_from_xin
-    
-    for refnode in all_magnify_files:
-        basename = os.path.basename(refnode.abspath()).replace(".root","")
-
-        for short_name, long_name, hist_name in [("tenf", "noise_filters", "raw"),
-                                                 ("tesp", "signal_proc", "decon")]:
-            boname = basename + "-" + short_name
-
-            def rname(n): return "%s%d.root" % (boname, n)
-            def lname(n): return "%s%d.log"  % (boname, n)
-
-            tecmd = te_pattern % long_name.upper()
-
-            bld(rule=tecmd, source=refnode, target=[rname(1), lname(1)])
-            bld(rule=tecmd, source=rname(1), target=[rname(2), lname(2)])
-            bld(rule=tecmd, source=rname(2), target=[rname(3), lname(3)])
-
-            def rdname(l): return "%s-diff%s.root" % (boname, l)
-            def rlname(l): return "%s-diff%s.log"  % (boname, l)
-            def rokname(l): return "%s-diff%s.ok"  % (boname, l)
-
-            #bld(rule=mdcmd, source=[refnode, rname(1)],      target=[rdname("r1"), rlname("r1")])
-            #bld(rule=mdcmd, source=[rname(1), rname(2)], target=[rdname("12"), rlname("12")])
-            bld(rule=mdcmd, source=[rname(2), rname(3)], target=[rdname("23"), rlname("23")])
-                
-            def pdname(l): return "%s-diff%s.png" % (boname, l)
-            bld(rule=mpcmd%hist_name, source=rdname("23"), target=pdname("23"))
-
-            testcmd = 'test -z "$(grep _%s ${SRC[0].abspath()})" && touch ${TGT[0].abspath()}' % hist_name
-            #bld(rule=testcmd, source=rlname("r1"), target=rokname("r1"))
-            #bld(rule=testcmd, source=rlname("12"), target=rokname("12"))
-            bld(rule=testcmd, source=rlname("23"), target=rokname("23"))
-            
-
-
-
-def garbage():
-
-    top = vld.path.parent
-    sm = top.children                     # submodules
-    wire_cell = sm["apps"].find_or_declare("wire-cell"),
-    # fixme: move any and all configs used for validation into this package
-    bld.env.CFGDIR = sm["cfg"].abspath()
-
-    bld(rule="${SRC[0].abspath()} --help > ${TGT[0].abspath()} 2>&1",
-            source=wire_cell,
-            target="help_output.txt")
-    bld(rule="test $(wc -l < ${SRC} ) = 9 && touch ${TGT[0].abspath()}",
-            source="help_output.txt",
-            target="help_output.txt.ok")
-
-
-    bld(rule="${JSONNET} -J ${CFGDIR} -o ${TGT[0].abspath()} ${SRC[0].abspath()}",
-            source = sm["cfg"].find_resource("uboone/fourdee.jsonnet"),
-            target = "uboone-fourdee.json")
+    index_json = bld.path.find_or_declare("all_dat.json")
+    index_html = bld.path.find_or_declare("index.html")
+    bld(rule=jsonify(dat = all_dat),  source=diff_logs, target=index_json)
+    bld(rule=htmlify(), source=[indextmpl, index_json], target=[index_html])
+    bld.install_files('${PREFIX}/html', [index_html])

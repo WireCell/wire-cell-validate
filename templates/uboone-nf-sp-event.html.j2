@@ -1,0 +1,27 @@
+<html>
+  <head>
+    <title>Summary event {{ run }}-{{ subrun }}-{{ event }}, processing chain {{ chain }}</title>
+  </head>
+  <body>
+    <h1>Summary event {{ run }}-{{ subrun }}-{{ event }}, processing chain {{ chain }}</h1>
+
+    <h2>Errors</h2>
+{% for fname, contents in source_contents.iteritems() -%}
+{% if contents -%}
+    <h3>Errors found in {{ fname }}</h3>
+<pre>
+{{ contents }}
+</pre>
+{% endif -%}
+{% endfor -%}
+
+<h2>Details</h2>
+<ul>
+{% for fname,mdat in mag.iteritems() -%}
+<li><a href="{{ mdat.summary_html }}">{{ mdat.desc }}</a></li>
+{% endfor -%}
+
+</body>
+
+
+</html>

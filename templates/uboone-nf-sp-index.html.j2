@@ -5,12 +5,28 @@
   <body>
     <h1>Summary pages for WCT NF + SP</h1>
 
-    First event of subrun:
-    <ul>
-    {% for subrun in subruns %}
-    <li><a href="larsoft-{{ subrun }}_nfsp_plots.html">{{ subrun }}</a></li>
-    {% endfor %}
-    </ul>  
+    <h2>Errors</h2>
+
+{% for fname, content in source_contents.items()|sort -%}
+{% if content -%}
+<a href="{{ dat.errdat[fname].link }}">{{ dat.errdat[fname].desc }}</a>
+<pre>
+{{ fname }}
+{{ content }}
+</pre>
+{% endif -%}
+{% endfor -%}
+
+    <h2>Links to detailed plots</h2>
+
+{% for runsub, rsdat in dat.iteritems()|sort -%}
+    <h3>Subrun {{ runsub }}</h3>
+    <ol>
+{% for event, evdat in rsdat.iteritems() -%}
+      <li> <a href="{{ evdat.event_html }}">Event {{ event }}</a></li>
+{% endfor -%}
+    </ol>
+{% endfor %}
     
   </body>
 </html>
