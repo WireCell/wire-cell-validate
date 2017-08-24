@@ -6,6 +6,8 @@
     <h1>Summary event {{ run }}-{{ subrun }}-{{ event }}, processing chain {{ chain }}</h1>
 
     <h2>Errors</h2>
+    Any issue caught by the validation code will show between the two horizontal rules below:
+<hr/>
 {% for fname, contents in source_contents.iteritems() -%}
 {% if contents -%}
     <h3>Errors found in {{ fname }}</h3>
@@ -14,12 +16,18 @@
 </pre>
 {% endif -%}
 {% endfor -%}
-
-<h2>Details</h2>
-<ul>
+<hr/>
+<h2>Detail Plots</h2>
+<table>
 {% for fname,mdat in mag.iteritems() -%}
-<li><a href="{{ mdat.summary_html }}">{{ mdat.desc }}</a></li>
+<tr>
+<td>{{ mdat.desc }}</td>
+<td><a href="{{ mdat.summary_html }}">[summary plots]</a></td>
+<td><a href="{{ fname }}">[Magnify file]</a></td>
+<tr>
 {% endfor -%}
+</table>
+
 
 </body>
 

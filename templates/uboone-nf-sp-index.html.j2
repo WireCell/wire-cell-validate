@@ -7,6 +7,8 @@
 
     <h2>Errors</h2>
 
+    Any issue caught by the validation code will show between the two horizontal rules below:
+<hr/>
 {% for fname, content in source_contents.items()|sort -%}
 {% if content -%}
 <a href="{{ dat.errdat[fname].link }}">{{ dat.errdat[fname].desc }}</a>
@@ -16,17 +18,20 @@
 </pre>
 {% endif -%}
 {% endfor -%}
+<hr/>
+    <h2>Links to detailed plots by file/event</h2>
 
-    <h2>Links to detailed plots</h2>
-
-{% for runsub, rsdat in dat.iteritems()|sort -%}
+{% for runsub, rsdat in dat.items()|sort -%}
+    {% if runsub != "errdat" -%}
     <h3>Subrun {{ runsub }}</h3>
     <ol>
-{% for event, evdat in rsdat.iteritems() -%}
+{% for event, evdat in rsdat.items() -%}
       <li> <a href="{{ evdat.event_html }}">Event {{ event }}</a></li>
 {% endfor -%}
     </ol>
+    {% endif -%}
 {% endfor %}
     
+
   </body>
 </html>

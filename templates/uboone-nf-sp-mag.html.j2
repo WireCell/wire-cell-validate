@@ -7,8 +7,10 @@
 
     <h2>Notes</h2>
 
+    <h3>2D plots</h3>
     <ul>
       <li>The plots are rebinned as shown in their title.</li>
+      <li>Color scales differ for each data tier.</li>
       <li>The rebinning performs an average and so changes the max/min values.</li>
       <li>Click image for higher resolution version.</li>
       <li>The "orig" plots are raw ADC (no noise filtering) and have
@@ -20,20 +22,31 @@
       their name indicating the form of filter used.
     </ul>
 
+    <h3>1D Channel summaries</h3>
+    <ul>
+      <li>Summarize the waveform for each channel</li>
+      <li>max/min/sum is on the signed value (if the data tier is signed)</li>
+      <li>absmax/absmin/abssum is the max/min/sum after absolute value</li>
+    </ul>
+
+
     <h2>Plots</h2>
 
+    <hr/>
     {% for tier in "orig raw wiener gauss".split() %}
     <h3>Data tier "{{ tier }}"</h3>
     
-    <h4>Tick vs channel</h4>
+    <h4>{{ tier }}: Tick vs. Channel</h4>
     <center>
       <a href="{{ pngs[tier]["display"] }}"><img src="{{ pngs[tier]["thumb"] }}"></a>
     </center>
 
-    <h4>Channel Summaries</h3>
+    <h4>{{ tier }}: Channel Summaries</h3>
     <center>
       <img src="{{ pngs[tier]["reduc"] }}">
     </center>
+
+    <hr/>
     {% endfor %}
     
   </body>

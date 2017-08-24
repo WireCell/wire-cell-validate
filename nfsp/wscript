@@ -69,7 +69,7 @@ def magnify_plot(name, crebin=4, trebin=5):
     if name == "orig":
         cmd += " --baseline --saturate 50"
     if name == "raw":
-        cmd += " --saturate 50"
+        cmd += " --threshold 1 --saturate 50"
     if name in "gauss wiener".split():
         cmd += " --threshold 10"        
     cmd+= " --out ${TGT[0].abspath()} ${SRC[0].abspath()}"
@@ -242,6 +242,7 @@ def build(bld):
             bld(rule=jsonify(**evtdat), source=[diff_log], target=[evt_json])
             bld(rule=htmlify(), source=[eventtmpl, evt_json], target=[evt_html])
             bld.install_files('${PREFIX}/html', [evt_html])
+            bld.install_files('${PREFIX}/html', [wcls_mag, wct_mag, diff_mag])
 
 
         all_dat[runsub] = runsubdat
